@@ -3,7 +3,7 @@
 ## 📋 Document Purpose
 This document captures the key architectural, technical, and strategic decisions made during the design and implementation of the LinkedIn Profile API. It explains the rationale behind each choice, the trade-offs considered, and the implications for the system's behavior, maintenance, and scalability.
 
-**Project Context**: A hosted API that accepts LinkedIn profile URLs and returns structured profile data through reverse-engineered LinkedIn internal APIs, without using browser automation.
+**Project Context**: A hosted API and local web UI that accept LinkedIn profile URLs and return structured profile data through reverse-engineered LinkedIn internal APIs, without using browser automation.
 
 ---
 
@@ -103,24 +103,26 @@ LinkedIn scraping is inherently slow (2-5 seconds/profile) and rate-limited (~20
 - Create poor user experience
 
 ### Decision
-**Implemented an async job queue pattern** with Redis as the message broker.
+**Implemented an async job queue pattern** with PostgreSQL as both the job queue and profile cache.
 
 ### Architecture
 ```mermaid
 flowchart LR
-    A[Client Request] --> B[API Gateway<br>FastAPI]
-    B --> C[Create Job ID]
-    C --> D[Store in Redis]
-    D --> E[Return 202 Accepted]
-    B --> F[Worker Pool]
-    F --> G[Dequeue Jobs]
-    G --> H[Authenticate]
-    H --> I[Fetch Profile Data]
-    I --> J[Cache Results]
-    J --> K[Update Job Status]
-    K --> L[Trigger Webhook]
-    E --> M[Poll for Results<br>or Webhook]
-    M --> N[Return Structured Data]
+    A[Browser UI] --> B[UI Proxy<br>/api/v1/ui/*]
+    C[API Client] --> D[Authenticated API<br>/api/v1/scrape]
+    B --> E[API Gateway<br>FastAPI]
+    D --> E
+    E --> F[Create Job ID]
+    F --> G[Store in PostgreSQL]
+    G --> H[Return 202 Accepted]
+    E --> I[Worker Pool]
+    I --> J[Poll Queued Jobs]
+    J --> K[Authenticate]
+    K --> L[Fetch Profile Data]
+    L --> M[Cache Results in PostgreSQL]
+    M --> N[Update Job Status]
+    H --> O[Poll for Results]
+    O --> P[Return Structured Data]
 ```
 
 ### Rationale
@@ -133,9 +135,9 @@ flowchart LR
 | **Complexity** | Simpler implementation | More infrastructure |
 
 ### Trade-offs
-- **Accepted**: Increased infrastructure complexity (Redis requirement)
-- **Mitigated**: Used managed Redis services (Upstash/Fly.io)
-- **Benefited**: 10x throughput improvement, graceful degradation under load
+- **Accepted**: Polling-based job retrieval adds client complexity
+- **Mitigated**: Immediate `202 Accepted` response, clear poll URLs, bundled web UI handles polling
+- **Benefited**: Simpler infrastructure (no separate message broker), job persistence in one database, 10x throughput vs. synchronous scraping
 
 ### Performance Characteristics
 - **API Response Time**: ~100ms (job creation) vs. 3-5s (synchronous)
@@ -209,63 +211,63 @@ headers = {
 
 ---
 
-## 🔄 Decision 5: Dual Data Fetching Strategy (GraphQL + REST)
+## 🔄 Decision 5: Multi-Source Data Fetching Strategy (Dash + GraphQL + REST)
 
 ### Context
-LinkedIn is transitioning from REST endpoints to GraphQL. The profile data is available through both mechanisms, but with different characteristics:
+LinkedIn profile data is available through multiple internal mechanisms with different characteristics:
 
-- **REST**: Multiple endpoints, stable but verbose
-- **GraphQL**: Single endpoint, comprehensive but changing queries
+- **Dash API**: Primary Voyager dash endpoint used by the modern LinkedIn web app
+- **GraphQL**: Single endpoint, comprehensive but changing queries and decoration IDs
+- **REST**: Multiple stable endpoints, verbose but useful as fallback
 
 ### Decision
-**Implemented a GraphQL-primary strategy with REST fallback**.
+**Implemented a Dash-primary strategy with GraphQL and REST fallbacks**.
 
 ### Data Fetching Flow
 ```mermaid
 flowchart TD
     A[Start Profile Scrape] --> B[Resolve Profile ID]
-    B --> C{GraphQL Available?}
-    C -- Yes --> D[Fetch via GraphQL<br>Single Request]
-    C -- No --> E[Fetch via REST<br>Multiple Requests]
-    D --> F[Parse GraphQL Response]
-    E --> G[Parse Individual Responses]
-    F --> H[Normalize to Common Schema]
-    G --> H
-    H --> I[Return Unified Data]
-    
-    D --> J{Success?}
-    J -- No --> E
-    J -- Yes --> K[Use GraphQL Data]
-    E --> L{All Endpoints Succeeded?}
-    L -- No --> M[Collect Partial Data<br>+ Error Warnings]
-    L -- Yes --> N[Use Complete REST Data]
+    B --> C[Fetch via Dash API]
+    C --> D{Success?}
+    D -- Yes --> E[Parse Dash Response]
+    D -- No --> F[Fetch via GraphQL]
+    F --> G{Success?}
+    G -- Yes --> H[Parse GraphQL Response]
+    G -- No --> I[Fetch via REST<br>Multiple Requests]
+    I --> J[Parse REST Responses]
+    E --> K[Normalize to Common Schema]
+    H --> K
+    J --> K
+    K --> L[Return Unified Data]
 ```
 
 ### Rationale
-| Aspect | GraphQL Only | REST Only | Hybrid Approach |
-| :--- | :--- | :--- | :--- |
-| **Performance** | Excellent (1 request) | Poor (8-10 requests) | Good (1-3 requests typically) |
-| **Reliability** | Medium (query changes) | High (stable endpoints) | Excellent (fallback mechanism) |
-| **Data Completeness** | High (comprehensive) | Medium (requires multiple calls) | High (best of both) |
-| **Maintenance** | High (query updates) | Medium (endpoint changes) | Medium (balanced) |
+| Aspect | Dash Only | GraphQL Only | REST Only | Dash + GraphQL + REST |
+| :--- | :--- | :--- | :--- | :--- |
+| **Performance** | Excellent | Excellent (1 request) | Poor (8-10 requests) | Excellent (usually 1 request) |
+| **Reliability** | Medium | Medium (query changes) | High | Excellent (fallback chain) |
+| **Data Completeness** | High | High | Medium | High |
+| **Maintenance** | Medium | High | Medium | Medium (balanced) |
 
 ### Trade-offs
-- **Accepted**: More complex parsing logic, dual maintenance burden
-- **Mitigated**: Shared parser interface, automated testing of both paths
-- **Benefited**: 50% faster than REST-only, 3x more reliable than GraphQL-only
+- **Accepted**: More complex parsing logic, three code paths to maintain
+- **Mitigated**: Shared parser interface, externalized endpoints in YAML, automated scrape tests
+- **Benefited**: Best success rate across LinkedIn API changes; Dash matches current web client behavior
 
 ### Implementation Example
 ```python
 async def scrape_profile(self, url: str) -> Dict[str, Any]:
-    """Hybrid scraping approach with automatic fallback"""
+    """Dash-first scraping with GraphQL and REST fallback"""
     try:
-        # Try GraphQL first (faster, more comprehensive)
-        data = await self.get_profile_graphql(profile_id)
-        return self.parser.parse_graphql_response(data)
-    except GraphQLQueryError:
-        # Fall back to REST endpoints
-        rest_data = await self.fetch_all_rest_endpoints(profile_id)
-        return self.parser.parse_rest_responses(rest_data)
+        dash_data = await client.get_profile_dash(vanity)
+        return self._parse_dash_response(dash_data, profile_id, url, warnings)
+    except LinkedInError:
+        try:
+            graphql_data = await client.get_profile_graphql(profile_id)
+            return self._parse_graphql_response(graphql_data, profile_id, url)
+        except (GraphQLQueryError, LinkedInError):
+            rest_data = await self.fetch_all_rest_endpoints(profile_id)
+            return self._parse_rest_responses(rest_data)
 ```
 
 ---
@@ -407,41 +409,88 @@ flowchart TD
 ## 🚀 Decision 8: Deployment & Infrastructure Choices
 
 ### Context
-The system needed to be publicly accessible, scalable, and cost-effective. Different components have different requirements (API vs. workers).
+The system needed to be publicly accessible, scalable, and cost-effective for both local development and production deployment on a cloud VM.
 
 ### Decision
-**Implemented a containerized deployment** on Fly.io with separate services for API and workers.
+**Implemented a containerized deployment** with Docker Compose (local and production on Vultr/Ubuntu) and separate containers for API, worker, and PostgreSQL.
 
 ### Architecture
 ```mermaid
 flowchart LR
-    A[Client] --> B[Fly.io Edge Proxy<br>HTTPS Termination]
-    B --> C[API Service<br>2 instances, 256MB RAM]
-    B --> D[Worker Service<br>1 instance, 2GB RAM]
-    C --> E[Upstash Redis<br>Managed]
-    D --> E
-    C --> F[Job Queue]
-    D --> F
-    F --> G[Cache Layer]
-    E --> G
+    A[Browser UI] --> B[API Container<br>FastAPI + Static Files]
+    C[API Client] --> B
+    B --> D[PostgreSQL<br>Queue + Cache]
+    E[Worker Container] --> D
+    B --> F[HTTPS via Caddy<br>Production Only]
+    F --> G[Public Internet]
 ```
 
 ### Rationale
-**Why Fly.io?**
-- **Simple Deployment**: `fly launch` and `fly deploy`
-- **Global Edge**: Low latency worldwide
-- **Free Tier**: Affordable for development/testing
-- **Container Native**: Perfect for Dockerized apps
+**Why Docker Compose?**
+- **Local Parity**: Same stack for development and production
+- **Simple Operations**: `docker compose up -d --build` starts API, worker, and database
+- **No Extra Broker**: PostgreSQL handles both persistence and job queue
 
-**Why Separate Services?**
+**Why Separate API and Worker Containers?**
 - **Independent Scaling**: Scale workers based on queue depth
-- **Different Requirements**: API needs low latency, workers need high memory
-- **Isolation**: Worker failures don't impact API availability
+- **Different Requirements**: API serves HTTP + static UI; workers run scrape jobs
+- **Isolation**: Worker failures don't take down the API process
 
 ### Trade-offs
-- **Accepted**: More complex deployment configuration
-- **Mitigated**: Docker Compose for local development, clear documentation
-- **Benefited**: 50% cost reduction vs. monolithic deployment, better resource utilization
+- **Accepted**: VM management and manual HTTPS setup (Caddy) in production
+- **Mitigated**: Documented Vultr deployment steps in README, health checks in Compose
+- **Benefited**: Lower complexity than multi-cloud managed services; no Redis/Upstash dependency
+
+---
+
+## 🖥️ Decision 9: Minimal Static Frontend with Server-Side UI Proxy
+
+### Context
+Developers and reviewers needed a simple way to submit LinkedIn profile URLs and inspect structured results without writing curl commands or embedding an API key in client-side code.
+
+### Decision
+**Serve a vanilla HTML/CSS/JS frontend from FastAPI** and expose unauthenticated **UI proxy routes** (`/api/v1/ui/*`) that delegate to the same job queue using the server-side `API_KEY`.
+
+### Architecture
+```mermaid
+flowchart LR
+    A[Browser] --> B[Static Files<br>frontend/]
+    B --> C[app.js]
+    C --> D[POST /api/v1/ui/scrape]
+    C --> E[GET /api/v1/ui/scrape/job_id]
+    D --> F[ui_routes.py]
+    E --> F
+    F --> G[JobService<br>same as authenticated API]
+    G --> H[PostgreSQL Queue]
+```
+
+### Rationale
+| Aspect | SPA Framework (React/Vite) | Vanilla Static + UI Proxy |
+| :--- | :--- | :--- |
+| **Setup Complexity** | Build step, npm toolchain | No build step; files served directly |
+| **API Key Handling** | Expose key or add BFF anyway | Server-side key via proxy |
+| **Fit for Assignment** | Heavier than needed | Minimal, easy to demo locally |
+| **Maintenance** | Framework upgrades | Single HTML/CSS/JS bundle |
+
+**Alternatives considered:**
+1. **API key in browser** — Rejected; exposes secret in client code or localStorage.
+2. **React/Vite frontend** — Rejected for initial scope; YAGNI for a local demo UI.
+3. **Static files only, authenticated API from JS** — Rejected; would require users to paste API keys.
+
+### UI Behavior
+- **Input**: Comma-separated LinkedIn profile URLs (single URL supported without trailing comma)
+- **Processing**: Submit jobs in parallel, poll every ~2 seconds per job
+- **Output**: Profile cards with name, headline, location, about, experience, education, skills, certifications, languages, and images when available
+
+### Trade-offs
+- **Accepted**: `/api/v1/ui/*` has no client authentication — anyone who can reach the API can submit scrape jobs locally
+- **Mitigated**: Documented as local-dev only; README warns to restrict or disable UI routes in production
+- **Benefited**: Fast local testing at `http://localhost:8000`, no API key management in the browser
+
+### Implications
+- **Positive**: Immediate visual feedback for scrape results; same async queue as external API clients
+- **Negative**: Production deployments must consciously protect `/` and `/api/v1/ui/*`
+- **Neutral**: External API (`/api/v1/scrape` with `X-API-Key`) unchanged for programmatic access
 
 ---
 
@@ -457,12 +506,11 @@ flowchart LR
 | **Success Rate** | 85-90% | Including partial data |
 
 ### Resource Usage
-| Component | CPU Usage | Memory Usage | Cost/Month |
+| Component | CPU Usage | Memory Usage | Notes |
 | :--- | :--- | :--- | :--- |
-| **API Service** | 5-10% | 100-150MB | $5-10 |
-| **Worker Service** | 20-40% | 1.5-2GB | $20-30 |
-| **Redis** | <5% | <100MB | $5-10 |
-| **Total** | ~30% | ~2GB | **$30-50/month** |
+| **API Service** | 5-10% | 100-150MB | Serves API + static frontend |
+| **Worker Service** | 20-40% | 1.5-2GB | Scrape jobs |
+| **PostgreSQL** | <10% | 200-500MB | Queue + cache |
 
 ---
 
@@ -499,25 +547,29 @@ flowchart TD
 
 ### Most Critical Decisions
 1. **Direct API over browser automation** - 10x performance improvement, assignment compliance
-2. **Async queue architecture** - Enabled scalable, responsive API
-3. **Comprehensive error handling** - 95% of requests return useful data
+2. **Async queue architecture (PostgreSQL)** - Enabled scalable, responsive API without a separate broker
+3. **Dash + GraphQL + REST fallback chain** - Resilience when LinkedIn rotates internal APIs
 4. **Configuration-driven design** - 90% faster maintenance updates
+5. **Minimal static frontend + UI proxy** - Local demo and testing without client-side API keys
 
 ### Biggest Trade-offs Accepted
 1. **Higher maintenance burden** vs. significant performance gains
 2. **Increased complexity** vs. better scalability and reliability
 3. **Fragility to LinkedIn changes** vs. compliance with assignment requirements
+4. **Unauthenticated UI proxy** vs. frictionless local development experience
 
 ### System Strengths
 - **Performance**: 2-5 seconds/profile (vs. 15-45 seconds for browser automation)
 - **Reliability**: 85-90% success rate with graceful degradation
-- **Scalability**: Horizontally scalable workers, cost-effective deployment
+- **Scalability**: Horizontally scalable workers, PostgreSQL-backed queue
 - **Maintainability**: Configuration-driven updates, clear error messages
+- **Usability**: Web UI at `/` for comma-separated batch scraping during local dev
 
 ### System Weaknesses
 - **Fragility**: Requires weekly maintenance to adapt to LinkedIn changes
-- **Complexity**: Multi-service architecture with Redis dependency
-- **Legal Uncertainty**: Scraping publicly available data is in a legal gray area 【turn0search0】【turn0search1】
+- **Complexity**: Multi-container architecture (API, worker, Postgres)
+- **UI proxy security**: `/api/v1/ui/*` must be restricted in production deployments
+- **Legal Uncertainty**: Scraping publicly available data is in a legal gray area
 
 ### Future Improvements
 1. **Proxy Rotation**: Implement IP rotation to avoid blocks
@@ -527,6 +579,6 @@ flowchart TD
 
 ---
 
-**Document Version**: 1.0  
+**Document Version**: 1.1  
 **Last Updated**: 2026-08-30  
 **Next Review**: 2026-09-30 (or after any major LinkedIn change)

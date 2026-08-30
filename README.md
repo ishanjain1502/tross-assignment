@@ -1,22 +1,24 @@
 # LinkedIn Profile API
 
-A hosted HTTPS API that accepts LinkedIn profile URLs and returns structured profile data (name, headline, location, about, experience, education, skills, certifications, languages, and images) by calling LinkedIn's internal Voyager APIs directly — **no browser automation**.
+A hosted HTTPS API and local web UI that accept LinkedIn profile URLs and return structured profile data (name, headline, location, about, experience, education, skills, certifications, languages, and images) by calling LinkedIn's internal Voyager APIs directly — **no browser automation**.
 
 ## Architecture
 
 ```
-Client → FastAPI (POST /scrape) → PostgreSQL job queue
-                                        ↓
-                              Background worker polls queue
-                                        ↓
-                    Resolve URL → GraphQL (primary) / REST (fallback)
-                                        ↓
-                              Parse → Cache → Return JSON
+Browser UI (/)  ──→  /api/v1/ui/scrape  ──┐
+                                           ├──→  PostgreSQL job queue
+API client      ──→  /api/v1/scrape       ──┘         ↓
+              (X-API-Key)                    Background worker polls queue
+                                                        ↓
+                              Resolve URL → Dash / GraphQL (primary) / REST (fallback)
+                                                        ↓
+                                              Parse → Cache → Return JSON
 ```
 
 | Component | Technology |
 |-----------|------------|
 | API | FastAPI + Uvicorn |
+| Web UI | Vanilla HTML/CSS/JS (served by FastAPI) |
 | Queue & cache | PostgreSQL 16 |
 | HTTP client | httpx (async) |
 | Worker | Python async polling loop |
@@ -64,7 +66,17 @@ curl http://localhost:8000/health
 
 Expected: `{"status":"healthy","version":"1.0.0"}`
 
-### 4. Submit a scrape job
+### 4. Scrape profiles (web UI)
+
+Open [http://localhost:8000](http://localhost:8000) in your browser.
+
+1. Paste one or more LinkedIn profile URLs, **comma-separated**.
+2. Click **Scrape profiles**.
+3. Watch per-URL progress, then view structured results cards.
+
+The UI calls unauthenticated proxy routes (`/api/v1/ui/*`) that use the server-side `API_KEY` from `.env` — no API key input in the browser.
+
+### 5. Submit a scrape job (API / curl)
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/scrape \
@@ -82,9 +94,33 @@ curl http://localhost:8000/api/v1/scrape/<job_id> \
 
 ---
 
+## Web UI
+
+A minimal static frontend lives in `frontend/` and is served by the API container at `/`.
+
+| File | Purpose |
+|------|---------|
+| `frontend/index.html` | URL input, progress list, results container |
+| `frontend/styles.css` | Profile cards, sections, responsive layout |
+| `frontend/app.js` | Parse comma-separated URLs, submit jobs, poll, render |
+
+**Displayed fields per profile:** name, headline, location, about, experience, education, skills, certifications, languages, profile image, and background image (when available).
+
+**Input format:** comma-separated URLs, e.g.
+
+```
+https://www.linkedin.com/in/johndoe, https://www.linkedin.com/in/janedoe
+```
+
+A single URL works without a trailing comma. Invalid URLs are rejected before submission.
+
+**Local dev auth:** The browser never sees `API_KEY`. `app/api/ui_routes.py` exposes thin proxy endpoints that delegate to the same job queue as the authenticated API. Intended for local development only — do not expose the UI proxy publicly in production without additional access controls.
+
+---
+
 ## API reference
 
-All endpoints require the `X-API-Key` header.
+Authenticated endpoints (`/api/v1/scrape`) require the `X-API-Key` header. UI proxy endpoints (`/api/v1/ui/scrape`) do not — they rely on the server-side key and are meant for the bundled web UI.
 
 ### `GET /health`
 
@@ -176,6 +212,14 @@ Poll job status or retrieve results.
   }
 }
 ```
+
+### `POST /api/v1/ui/scrape`
+
+Local web UI proxy — same request/response as `POST /api/v1/scrape`, but **no `X-API-Key` header**. Uses `API_KEY` from server environment.
+
+### `GET /api/v1/ui/scrape/{job_id}`
+
+Local web UI proxy — same response shapes as `GET /api/v1/scrape/{job_id}`, but **no `X-API-Key` header**.
 
 ---
 
@@ -384,6 +428,8 @@ curl -X POST https://api.yourdomain.com/api/v1/scrape \
   -d '{"profile_url": "https://www.linkedin.com/in/johndoe/"}'
 ```
 
+The web UI is also available at `https://api.yourdomain.com/` if you keep the static file mount enabled. For production, consider restricting access to `/` and `/api/v1/ui/*` (e.g. IP allowlist, basic auth in Caddy, or removing `ui_routes` registration) since those endpoints do not require a client API key.
+
 ### Step 12 — Enable auto-restart on reboot
 
 Docker Compose services use `restart: unless-stopped`. Ensure Docker starts on boot:
@@ -439,10 +485,11 @@ docker compose exec postgres pg_dump -U linkedin linkedin_api > backup.sql
 This project reverse-engineers LinkedIn's internal **Voyager API** (the same HTTP/GraphQL calls the website makes) instead of using browser automation or LinkedIn's limited public developer APIs.
 
 1. **Async job queue** — Scraping takes 2–5 seconds per profile; clients get a job ID immediately and poll for results.
-2. **GraphQL-first** — A single GraphQL query fetches most profile sections; REST endpoints are used as fallback.
+2. **Dash / GraphQL-first** — Profile sections are fetched via LinkedIn's internal Dash and GraphQL endpoints; REST endpoints are used as fallback.
 3. **PostgreSQL-backed cache** — Profiles are cached with a configurable TTL (default 24 hours) to reduce LinkedIn requests.
 4. **Externalized endpoints** — Voyager paths and GraphQL decoration IDs live in `config/linkedin_endpoints.yaml` so they can be updated without code changes when LinkedIn rotates internal APIs.
 5. **Cookie auth** — Session cookies from a real browser login avoid CAPTCHA issues common with credential-based login.
+6. **Static UI + server proxy** — A vanilla HTML/CSS/JS frontend is served by FastAPI with no build step. The UI talks to `/api/v1/ui/*` proxy routes so credentials stay server-side during local development.
 
 ---
 
@@ -457,6 +504,7 @@ This project reverse-engineers LinkedIn's internal **Voyager API** (the same HTT
 | **Terms of Service** | Automated access may violate LinkedIn's ToS. Use at your own risk with a non-primary account. |
 | **No official API parity** | Public LinkedIn APIs cannot fetch arbitrary full profiles; this project intentionally uses reverse engineering per assignment requirements. |
 | **Decoration ID drift** | GraphQL `decorationId` values rotate; update `config/linkedin_endpoints.yaml` when GraphQL returns 500 errors. |
+| **UI proxy exposure** | `/api/v1/ui/*` has no client auth. Restrict or disable it when deploying the API publicly. |
 
 ---
 
@@ -464,11 +512,16 @@ This project reverse-engineers LinkedIn's internal **Voyager API** (the same HTT
 
 ```
 app/
-  api/routes.py          # FastAPI routes
+  api/routes.py          # Authenticated scrape API (X-API-Key)
+  api/ui_routes.py       # Unauthenticated UI proxy (local dev)
   linkedin/              # Voyager client, auth, parsers
   services/              # Job queue, cache, scraper orchestration
   workers/main.py        # Background worker
-  main.py                # FastAPI entrypoint
+  main.py                # FastAPI entrypoint + static file mount
+frontend/
+  index.html             # Web UI shell
+  styles.css             # Profile card styles
+  app.js                 # Submit, poll, render logic
 config/
   linkedin_endpoints.yaml
 scripts/
@@ -493,7 +546,7 @@ cp .env.example .env
 # Start Postgres (or use docker compose up -d postgres)
 PYTHONPATH=. python scripts/init_db.py
 
-# Terminal 1 — API
+# Terminal 1 — API (serves http://localhost:8000 UI + API)
 DATABASE_URL=postgresql+asyncpg://linkedin:linkedin@localhost:5433/linkedin_api \
   PYTHONPATH=. uvicorn app.main:app --reload --port 8000
 
@@ -501,6 +554,8 @@ DATABASE_URL=postgresql+asyncpg://linkedin:linkedin@localhost:5433/linkedin_api 
 DATABASE_URL=postgresql+asyncpg://linkedin:linkedin@localhost:5433/linkedin_api \
   PYTHONPATH=. python -m app.workers.main
 ```
+
+Open [http://localhost:8000](http://localhost:8000) for the web UI, or use the authenticated API at `/api/v1/scrape` with `X-API-Key`.
 
 ---
 
