@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: linkedin_postgres
+    environment:
+      POSTGRES_USER: linkedin
+      POSTGRES_PASSWORD: linkedin
+      POSTGRES_DB: linkedin_api
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U linkedin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: linkedin_api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://linkedin:linkedin@postgres:5432/linkedin_api
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: linkedin_worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://linkedin:linkedin@postgres:5432/linkedin_api
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: python -m app.workers.main
+
+volumes:
+  postgres_data:
