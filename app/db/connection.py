@@ -25,5 +25,6 @@ async def get_session() -> AsyncSession:
         yield session
 
 async def init_db():
+    import app.db.models  # noqa: F401 - register models with Base.metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

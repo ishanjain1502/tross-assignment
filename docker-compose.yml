@@ -4,6 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: linkedin_postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: linkedin
       POSTGRES_PASSWORD: linkedin
@@ -13,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U linkedin"]
+      test: ["CMD-SHELL", "pg_isready -U linkedin -d linkedin_api"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,6 +24,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: linkedin_api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -32,6 +34,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   worker:
@@ -39,12 +47,15 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: linkedin_worker
+    restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql+asyncpg://linkedin:linkedin@postgres:5432/linkedin_api
     env_file:
       - .env
     depends_on:
       postgres:
+        condition: service_healthy
+      api:
         condition: service_healthy
     command: python -m app.workers.main
 
