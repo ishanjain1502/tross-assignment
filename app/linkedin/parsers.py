@@ -111,3 +111,227 @@ class ProfileParser:
         text = re.sub(r'<[^>]+>', ' ', text)
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
+    
+    def parse_graphql_positions(self, data: Dict[str, Any]) -> List[Dict]:
+        """Parse experience/positions from GraphQL response"""
+        positions = data.get('data', {}).get('profile', {}).get('positions', {})
+        elements = positions.get('elements', [])
+        
+        results = []
+        for pos in elements:
+            results.append({
+                "title": pos.get('title', ''),
+                "company": {
+                    "name": pos.get('companyName', ''),
+                    "url": self._urn_to_company_url(pos.get('companyUrn')),
+                    "logo_url": self._parse_graphql_image(
+                        pos.get('companyLogo', {}).get('image') if pos.get('companyLogo') else None
+                    ),
+                },
+                "location": pos.get('locationName', ''),
+                "dates": {
+                    "start": self._parse_graphql_date(pos.get('startDate')),
+                    "end": self._parse_graphql_date(pos.get('endDate')),
+                    "is_current": pos.get('endDate') is None,
+                },
+                "description": self._clean_html(pos.get('description', '')),
+            })
+        
+        return results
+    
+    def parse_rest_positions(self, positions_data: Dict) -> List[Dict]:
+        """Parse positions from REST endpoint"""
+        if not positions_data:
+            return []
+        
+        elements = positions_data.get('elements', [])
+        results = []
+        
+        for pos in elements:
+            results.append({
+                "title": pos.get('title', ''),
+                "company": {
+                    "name": pos.get('companyName', ''),
+                    "url": self._urn_to_company_url(pos.get('companyUrn')),
+                },
+                "location": pos.get('locationName', ''),
+                "dates": {
+                    "start": self._parse_rest_date(pos.get('startDate')),
+                    "end": self._parse_rest_date(pos.get('endDate')),
+                    "is_current": pos.get('endDate') is None,
+                },
+                "description": self._clean_html(pos.get('description', '')),
+            })
+        
+        return results
+    
+    def parse_graphql_education(self, data: Dict[str, Any]) -> List[Dict]:
+        """Parse education from GraphQL response"""
+        education = data.get('data', {}).get('profile', {}).get('educations', {})
+        elements = education.get('elements', [])
+        
+        results = []
+        for edu in elements:
+            results.append({
+                "institution": {
+                    "name": edu.get('schoolName', ''),
+                    "url": self._urn_to_school_url(edu.get('schoolUrn')),
+                },
+                "degree": edu.get('degreeName', ''),
+                "field_of_study": edu.get('fieldOfStudy', ''),
+                "dates": {
+                    "start": self._parse_graphql_date(edu.get('startDate')),
+                    "end": self._parse_graphql_date(edu.get('endDate')),
+                },
+                "description": self._clean_html(edu.get('description', '')),
+            })
+        
+        return results
+    
+    def parse_rest_education(self, education_data: Dict) -> List[Dict]:
+        """Parse education from REST endpoint"""
+        if not education_data:
+            return []
+        
+        elements = education_data.get('elements', [])
+        results = []
+        
+        for edu in elements:
+            results.append({
+                "institution": {
+                    "name": edu.get('schoolName', ''),
+                    "url": self._urn_to_school_url(edu.get('schoolUrn')),
+                },
+                "degree": edu.get('degreeName', ''),
+                "field_of_study": edu.get('fieldOfStudy', ''),
+                "dates": {
+                    "start": self._parse_rest_date(edu.get('startDate')),
+                    "end": self._parse_rest_date(edu.get('endDate')),
+                },
+                "description": self._clean_html(edu.get('description', '')),
+            })
+        
+        return results
+    
+    def parse_graphql_skills(self, data: Dict[str, Any]) -> List[Dict]:
+        """Parse skills from GraphQL response"""
+        skills = data.get('data', {}).get('profile', {}).get('skills', {})
+        elements = skills.get('elements', [])
+        
+        return [
+            {
+                "name": s.get('name', ''),
+                "endorsement_count": s.get('endorsementCount', 0),
+            }
+            for s in elements
+        ]
+    
+    def parse_rest_skills(self, skills_data: Dict) -> List[Dict]:
+        """Parse skills from REST endpoint"""
+        if not skills_data:
+            return []
+        
+        elements = skills_data.get('elements', [])
+        return [
+            {
+                "name": s.get('name', ''),
+                "endorsement_count": s.get('endorsementCount', 0),
+            }
+            for s in elements
+        ]
+    
+    def parse_graphql_certifications(self, data: Dict[str, Any]) -> List[Dict]:
+        """Parse certifications from GraphQL response"""
+        certs = data.get('data', {}).get('profile', {}).get('certifications', {})
+        elements = certs.get('elements', [])
+        
+        return [
+            {
+                "name": c.get('name', ''),
+                "issuer": c.get('authority', ''),
+                "issue_date": self._parse_graphql_date(c.get('start')),
+                "expiry_date": self._parse_graphql_date(c.get('end')),
+                "credential_id": c.get('licenseNumber', ''),
+            }
+            for c in elements
+        ]
+    
+    def parse_rest_certifications(self, certs_data: Dict) -> List[Dict]:
+        """Parse certifications from REST endpoint"""
+        if not certs_data:
+            return []
+        
+        elements = certs_data.get('elements', [])
+        return [
+            {
+                "name": c.get('name', ''),
+                "issuer": c.get('authority', ''),
+                "issue_date": self._parse_rest_date(c.get('start')),
+                "expiry_date": self._parse_rest_date(c.get('end')),
+                "credential_id": c.get('licenseNumber', ''),
+            }
+            for c in elements
+        ]
+    
+    def parse_graphql_languages(self, data: Dict[str, Any]) -> List[Dict]:
+        """Parse languages from GraphQL response"""
+        langs = data.get('data', {}).get('profile', {}).get('languages', {})
+        elements = langs.get('elements', [])
+        
+        return [
+            {
+                "name": l.get('name', ''),
+                "proficiency": l.get('proficiency', ''),
+            }
+            for l in elements
+        ]
+    
+    def parse_rest_languages(self, langs_data: Dict) -> List[Dict]:
+        """Parse languages from REST endpoint"""
+        if not langs_data:
+            return []
+        
+        elements = langs_data.get('elements', [])
+        return [
+            {
+                "name": l.get('name', ''),
+                "proficiency": l.get('proficiency', ''),
+            }
+            for l in elements
+        ]
+    
+    def _parse_graphql_date(self, date_obj: Optional[Dict]) -> Optional[Dict]:
+        """Parse GraphQL date object {year, month}"""
+        if not date_obj:
+            return None
+        return {
+            "year": date_obj.get('year'),
+            "month": date_obj.get('month'),
+        }
+    
+    def _parse_rest_date(self, date_obj: Optional[Dict]) -> Optional[Dict]:
+        """Parse REST date object"""
+        if not date_obj:
+            return None
+        return {
+            "year": date_obj.get('year'),
+            "month": date_obj.get('month'),
+        }
+    
+    def _urn_to_company_url(self, urn: Optional[str]) -> Optional[str]:
+        """Convert company URN to URL"""
+        if not urn:
+            return None
+        parts = urn.split(':')
+        if len(parts) >= 4:
+            return f"https://www.linkedin.com/company/{parts[-1]}/"
+        return None
+    
+    def _urn_to_school_url(self, urn: Optional[str]) -> Optional[str]:
+        """Convert school URN to URL"""
+        if not urn:
+            return None
+        parts = urn.split(':')
+        if len(parts) >= 4:
+            return f"https://www.linkedin.com/school/{parts[-1]}/"
+        return None
