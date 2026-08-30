@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinkedIn Profile Parser</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <h1>LinkedIn Profile Parser</h1>
+      <p class="subtitle">Enter one or more profile URLs (comma-separated) to extract structured data.</p>
+    </header>
+
+    <section class="input-panel">
+      <label for="profile-urls">Profile URLs</label>
+      <textarea
+        id="profile-urls"
+        rows="3"
+        placeholder="https://www.linkedin.com/in/username, https://www.linkedin.com/in/another-user"
+      ></textarea>
+      <div class="input-actions">
+        <button id="scrape-btn" type="button">Scrape profiles</button>
+        <span id="input-error" class="input-error" hidden></span>
+      </div>
+    </section>
+
+    <section id="progress-section" class="progress-section" hidden>
+      <h2>Progress</h2>
+      <ul id="progress-list" class="progress-list"></ul>
+    </section>
+
+    <section id="results-section" class="results-section" hidden>
+      <h2>Results</h2>
+      <div id="results" class="results"></div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
