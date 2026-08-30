@@ -56,6 +56,7 @@ For each relevant request, check:
 | `decorationId` | Query string or variables | `graphql.decoration_ids.full_profile` |
 | `queryId` | GraphQL query string param | Add/update in `graphql` section if used |
 | `Accept` header | Request headers | `required_headers.accept` |
+| `User-Agent` | Request headers | `required_headers.user_agent` |
 | `X-Restli-Protocol-Version` | Request headers | `required_headers.x_restli_protocol_version` |
 | Profile ID in HTML | View page source / initial HTML response | `profile_id_patterns` |
 

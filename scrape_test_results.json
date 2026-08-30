@@ -1,0 +1,124 @@
+{
+  "meta": {
+    "profiles_requested": 1,
+    "profiles_succeeded": 1,
+    "profiles_failed": 0,
+    "elapsed_seconds": 1.06,
+    "scraped_at": "2026-08-30T07:17:39.076351+00:00"
+  },
+  "results": [
+    {
+      "status": "success",
+      "profile_url": "https://www.linkedin.com/in/williamhgates/",
+      "profile": {
+        "url": "https://www.linkedin.com/in/williamhgates/",
+        "internal_id": "ACoAAA8BYqEBCGLg_vT_ca6mMEqkpp9nVffJ3hc",
+        "first_name": "Bill",
+        "last_name": "Gates",
+        "full_name": "Bill Gates",
+        "headline": "Chair, Gates Foundation and Founder, Breakthrough Energy",
+        "about": "Chair of the Gates Foundation. Founder of Breakthrough Energy. Co-founder of Microsoft. Voracious reader. Avid traveler. Active blogger.",
+        "location": {
+          "name": "Seattle, Washington, United States",
+          "country": null
+        },
+        "profile_image_url": "https://media.licdn.com/dms/image/v2/D5603AQF-RYZP55jmXA/profile-displayphoto-shrink_800_800/B56ZRi8g.aGsAc-/0/1736826818808?e=1789603200&v=beta&t=GxLFjoH4mCSRCmjFjlSicYo4x_fhdKp4801w4OtVZPI",
+        "background_image_url": "https://media.licdn.com/dms/image/v2/D5616AQEjhPbTCeblYg/profile-displaybackgroundimage-shrink_350_1400/B56ZcytR5SGsAg-/0/1748902420393?e=1789603200&v=beta&t=l5pS6rYe3TohSB2mDEyzqYCSIorJne8Nuea3PIeuKyU",
+        "connections": null
+      },
+      "experience": [
+        {
+          "title": "Co-chair",
+          "company": {
+            "name": "Gates Foundation",
+            "url": "https://www.linkedin.com/company/8736/"
+          },
+          "location": "",
+          "dates": {
+            "start": {
+              "year": 2000,
+              "month": null
+            },
+            "end": null,
+            "is_current": true
+          },
+          "description": ""
+        },
+        {
+          "title": "Founder",
+          "company": {
+            "name": "Breakthrough Energy ",
+            "url": "https://www.linkedin.com/company/19141006/"
+          },
+          "location": "",
+          "dates": {
+            "start": {
+              "year": 2015,
+              "month": null
+            },
+            "end": null,
+            "is_current": true
+          },
+          "description": ""
+        },
+        {
+          "title": "Co-founder",
+          "company": {
+            "name": "Microsoft",
+            "url": "https://www.linkedin.com/company/1035/"
+          },
+          "location": "",
+          "dates": {
+            "start": {
+              "year": 1975,
+              "month": null
+            },
+            "end": null,
+            "is_current": true
+          },
+          "description": ""
+        }
+      ],
+      "education": [
+        {
+          "institution": {
+            "name": "Lakeside School",
+            "url": "https://www.linkedin.com/school/3164077/"
+          },
+          "degree": "",
+          "field_of_study": "",
+          "dates": {
+            "start": null,
+            "end": null
+          },
+          "description": ""
+        },
+        {
+          "institution": {
+            "name": "Harvard University",
+            "url": "https://www.linkedin.com/school/18483/"
+          },
+          "degree": "",
+          "field_of_study": "",
+          "dates": {
+            "start": {
+              "year": 1973,
+              "month": null
+            },
+            "end": {
+              "year": 1975,
+              "month": null
+            }
+          },
+          "description": ""
+        }
+      ],
+      "skills": [],
+      "certifications": [],
+      "languages": [],
+      "warnings": [],
+      "scraped_at": "2026-08-30T07:17:39.075692+00:00",
+      "source": "dash"
+    }
+  ]
+}

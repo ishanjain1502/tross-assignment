@@ -24,6 +24,10 @@ NOTES:
 - JSESSIONID is used to extract the CSRF token
 - If scraping fails with auth errors, re-run this script
 - Never share your cookies with anyone
+- Using cookies in the API can log you out of LinkedIn in your browser
+  (LinkedIn ties sessions to browser fingerprint / User-Agent)
+- After updating cookies, restart containers:
+  docker compose up -d --force-recreate worker api
 """
 
 import os
@@ -118,13 +122,13 @@ def main():
     print()
     
     # Get li_at
-    li_at = input("li_at value: ").strip()
+    li_at = input("li_at value: ").strip().strip('"').strip("'")
     if not validate_cookie(li_at, 'li_at'):
         print("\n❌ ERROR: Invalid li_at value. Make sure you copied the full cookie value.")
         sys.exit(1)
     
     # Get JSESSIONID
-    jsessionid = input("JSESSIONID value: ").strip()
+    jsessionid = input("JSESSIONID value: ").strip().strip('"').strip("'")
     if not validate_cookie(jsessionid, 'JSESSIONID'):
         print("\n❌ ERROR: Invalid JSESSIONID value. Make sure you copied the full cookie value.")
         sys.exit(1)
@@ -147,6 +151,8 @@ def main():
     print("   - Sessions typically last ~6 months")
     print("   - If you get auth errors, re-run this script")
     print("   - Never share your .env file or cookies")
+    print("   - API use may log you out in the browser — extract fresh cookies after")
+    print("   - Then restart: docker compose up -d --force-recreate worker api")
     print("-" * 60)
     print()
 

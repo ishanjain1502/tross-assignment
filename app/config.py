@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     # LinkedIn Authentication
     linkedin_li_at: Optional[str] = Field(None, alias="LINKEDIN_LI_AT")
     linkedin_jsessionid: Optional[str] = Field(None, alias="LINKEDIN_JSESSIONID")
+    linkedin_user_agent: Optional[str] = Field(None, alias="USER_AGENT")
     linkedin_username: Optional[str] = Field(None, alias="LINKEDIN_USERNAME")
     linkedin_password: Optional[str] = Field(None, alias="LINKEDIN_PASSWORD")
     

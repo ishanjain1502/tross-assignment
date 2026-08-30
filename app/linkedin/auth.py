@@ -22,7 +22,10 @@ class LinkedInSession:
     
     @property
     def cookie_string(self) -> str:
-        return f"li_at={self.li_at}; JSESSIONID={self.jsessionid}"
+        jsession = self.jsessionid
+        if not (jsession.startswith('"') and jsession.endswith('"')):
+            jsession = f'"{jsession}"'
+        return f"li_at={self.li_at}; JSESSIONID={jsession}"
     
     @property
     def is_expired(self) -> bool:
@@ -38,23 +41,36 @@ class LinkedInAuth:
         self._session: Optional[LinkedInSession] = None
     
     def _extract_csrf_from_jsessionid(self, jsessionid: str) -> str:
-        """CSRF token is the part after the pipe character in JSESSIONID"""
+        """CSRF token is embedded in JSESSIONID (after pipe, or full ajax: value)."""
+        jsessionid = jsessionid.strip().strip('"').strip("'")
         if "|" in jsessionid:
-            return jsessionid.split("|")[1]
+            return jsessionid.split("|", 1)[1]
         return jsessionid
+    
+    def _sanitize_cookie(self, value: str) -> str:
+        """Strip whitespace and surrounding quotes from pasted cookie values."""
+        return value.strip().strip('"').strip("'")
+    
+    def _build_request_headers(self, session: LinkedInSession) -> dict:
+        """Headers LinkedIn Voyager expects for authenticated API calls."""
+        headers = dict(endpoints_config.required_headers)
+        if settings.linkedin_user_agent:
+            headers["User-Agent"] = self._sanitize_cookie(settings.linkedin_user_agent)
+        headers.update({
+            "Cookie": session.cookie_string,
+            "csrf-token": session.csrf_token,
+            "X-CSRF-Token": session.csrf_token,
+            "X-Li-Lang": "en_US",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": f"{endpoints_config.base_url}/feed/",
+        })
+        return headers
     
     def get_auth_headers(self) -> dict:
         """Get headers required for authenticated requests"""
         if not self._session:
             raise AuthError("Not authenticated - call get_session() first")
-        
-        headers = dict(endpoints_config.required_headers)
-        headers.update({
-            "Cookie": self._session.cookie_string,
-            "X-CSRF-Token": self._session.csrf_token,
-            "Referer": f"{endpoints_config.base_url}/feed/",
-        })
-        return headers
+        return self._build_request_headers(self._session)
     
     async def get_session(self) -> LinkedInSession:
         """Get a valid session, creating if necessary"""
@@ -67,7 +83,14 @@ class LinkedInAuth:
             try:
                 return await self._create_cookie_session()
             except SessionExpiredError:
-                pass  # Fall through to credential auth
+                if not settings.has_credential_auth:
+                    raise SessionExpiredError(
+                        "LinkedIn rejected the session cookies (403/401). "
+                        "Re-extract li_at and JSESSIONID from your browser with "
+                        "scripts/extract_session.py. Using cookies from a script "
+                        "can invalidate your browser session — extract fresh cookies "
+                        "and restart the worker: docker compose up -d --force-recreate worker"
+                    )
         
         # Fall back to credential auth
         if settings.has_credential_auth:
@@ -81,11 +104,12 @@ class LinkedInAuth:
     
     async def _create_cookie_session(self) -> LinkedInSession:
         """Create session from pre-extracted cookies"""
-        jsessionid = settings.linkedin_jsessionid
+        jsessionid = self._sanitize_cookie(settings.linkedin_jsessionid)
+        li_at = self._sanitize_cookie(settings.linkedin_li_at)
         csrf_token = self._extract_csrf_from_jsessionid(jsessionid)
         
         session = LinkedInSession(
-            li_at=settings.linkedin_li_at,
+            li_at=li_at,
             jsessionid=jsessionid,
             csrf_token=csrf_token
         )
@@ -109,25 +133,17 @@ class LinkedInAuth:
     async def _verify_session_with(self, session: LinkedInSession) -> bool:
         """Verify a specific session works by calling /me endpoint"""
         try:
-            headers = dict(endpoints_config.required_headers)
-            headers.update({
-                "Cookie": session.cookie_string,
-                "X-CSRF-Token": session.csrf_token,
-                "Referer": f"{endpoints_config.base_url}/feed/",
-            })
-            
             response = await self.client.get(
                 f"{endpoints_config.base_url}{endpoints_config.me_endpoint}",
-                headers=headers
+                headers=self._build_request_headers(session),
+                follow_redirects=False,
             )
             
             if response.status_code == 200:
                 return True
-            elif response.status_code == 401:
+            if response.status_code in (401, 403):
                 return False
-            else:
-                # Other status codes might indicate temporary issues
-                return response.status_code == 200
+            return False
                 
         except Exception:
             return False

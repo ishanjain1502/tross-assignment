@@ -8,6 +8,7 @@ rest_endpoints:
   # Identity & Profile
   profile: "/voyager/api/identity/profiles/{profile_id}"
   profile_extended: "/voyager/api/identity/dash/profiles/{profile_id}"
+  profile_by_vanity: "/voyager/api/identity/dash/profiles"
   profile_picture: "/voyager/api/identity/profiles/{profile_id}/profilePicture"
   me: "/voyager/api/me"
   
@@ -48,10 +49,13 @@ graphql:
   
   decoration_ids:
     full_profile: "com.linkedin.voyager.dash.deco.identity.profile.FullProfileWithEntities-28"
+    dash_full_profile: "com.linkedin.voyager.dash.deco.identity.profile.FullProfileWithEntities-93"
 
 # Headers required for authenticated requests
+# Keys use snake_case in YAML; app/linkedin/endpoints.py converts to HTTP names.
 required_headers:
   accept: "application/vnd.linkedin.normalized+json+2.1"
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   x_restli_protocol_version: "2.0.0"
   x_li_track: '{"clientVersion":"3.0.4244","osName":"web","deviceFactor":"DESKTOP","browserName":"chrome","browserVersion":"120.0"}'
   sec_fetch_dest: "empty"

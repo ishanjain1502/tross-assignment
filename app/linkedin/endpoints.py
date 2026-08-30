@@ -3,6 +3,16 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
+
+def normalize_header_name(name: str) -> str:
+    """Convert YAML snake_case keys to HTTP header names (e.g. x_restli_protocol_version)."""
+    return "-".join(part.capitalize() for part in name.split("_"))
+
+
+def normalize_headers(headers: Dict[str, str]) -> Dict[str, str]:
+    """Normalize header dict keys from YAML config to proper HTTP header names."""
+    return {normalize_header_name(key): value for key, value in headers.items()}
+
 @dataclass
 class ProfileIdPattern:
     name: str
@@ -31,6 +41,13 @@ class EndpointsConfig:
     @property
     def full_profile_decoration_id(self) -> str:
         return self.graphql.get('decoration_ids', {}).get('full_profile', '')
+
+    @property
+    def dash_full_profile_decoration_id(self) -> str:
+        return self.graphql.get('decoration_ids', {}).get(
+            'dash_full_profile',
+            self.full_profile_decoration_id,
+        )
     
     def get_rest_endpoint(self, name: str, **kwargs) -> str:
         """Get REST endpoint with variable substitution"""
@@ -62,7 +79,7 @@ def load_endpoints_config(config_path: Optional[str] = None) -> EndpointsConfig:
         base_url=data.get('base_url', 'https://www.linkedin.com'),
         rest_endpoints=data.get('rest_endpoints', {}),
         graphql=data.get('graphql', {}),
-        required_headers=data.get('required_headers', {}),
+        required_headers=normalize_headers(data.get('required_headers', {})),
         profile_id_patterns=patterns
     )
 
