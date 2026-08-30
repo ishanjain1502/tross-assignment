@@ -1,0 +1,68 @@
+# LinkedIn Internal API Endpoints
+# Update these when LinkedIn changes their API structure
+# Last verified: 2024-01
+
+base_url: "https://www.linkedin.com"
+
+rest_endpoints:
+  # Identity & Profile
+  profile: "/voyager/api/identity/profiles/{profile_id}"
+  profile_extended: "/voyager/api/identity/dash/profiles/{profile_id}"
+  profile_picture: "/voyager/api/identity/profiles/{profile_id}/profilePicture"
+  me: "/voyager/api/me"
+  
+  # Sections
+  positions: "/voyager/api/identity/profiles/{profile_id}/positions"
+  education: "/voyager/api/identity/profiles/{profile_id}/educations"
+  skills: "/voyager/api/identity/profiles/{profile_id}/skills"
+  certifications: "/voyager/api/identity/profiles/{profile_id}/certifications"
+  languages: "/voyager/api/identity/profiles/{profile_id}/languages"
+  projects: "/voyager/api/identity/profiles/{profile_id}/projects"
+  publications: "/voyager/api/identity/profiles/{profile_id}/publications"
+  honors: "/voyager/api/identity/profiles/{profile_id}/honors"
+  volunteer: "/voyager/api/identity/profiles/{profile_id}/volunteerExperiences"
+  
+  # GraphQL
+  graphql: "/voyager/api/graphql"
+
+graphql:
+  profile_full_query: |
+    query profileView($profileUrn:Urn!, $decorationId:String!) {
+      profile(viewer:{}, profileUrn:$profileUrn) {
+        ... on FullProfile {
+          firstName
+          lastName
+          headline
+          summary
+          location { name country { code } }
+          profilePicture { displayImage { elements { identifier rootUrl } } }
+          backgroundImage { displayImage { elements { identifier rootUrl } } }
+          positions { elements { ... on Position { title companyName companyUrn companyLogo { image { rootUrl identifier } } locationName startDate { year month } endDate { year month } description } } }
+          educations { elements { ... on Education { schoolName degreeName fieldOfStudy startDate { year } endDate { year } activities description } } }
+          skills { elements { name endorsementCount } }
+          certifications { elements { name authority start { year month } end { year month } licenseNumber } }
+          languages { elements { name proficiency } }
+        }
+      }
+    }
+  
+  decoration_ids:
+    full_profile: "com.linkedin.voyager.dash.deco.identity.profile.FullProfileWithEntities-28"
+
+# Headers required for authenticated requests
+required_headers:
+  accept: "application/vnd.linkedin.normalized+json+2.1"
+  x_restli_protocol_version: "2.0.0"
+  x_li_track: '{"clientVersion":"3.0.4244","osName":"web","deviceFactor":"DESKTOP","browserName":"chrome","browserVersion":"120.0"}'
+  sec_fetch_dest: "empty"
+  sec_fetch_mode: "cors"
+  sec_fetch_site: "same-origin"
+
+# Profile ID extraction patterns (order matters - first match wins)
+profile_id_patterns:
+  - name: "data_member_id"
+    pattern: 'data-member-id="([^"]+)"'
+  - name: "member_id_urn"
+    pattern: '"memberId":"([^"]+)"'
+  - name: "fsd_profile_urn"
+    pattern: 'urn:li:fsd_profile:([A-Za-z0-9_-]+)'
