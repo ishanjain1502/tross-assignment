@@ -98,27 +98,73 @@ class ScraperService:
     ) -> Dict[str, Any]:
         """Execute the actual scraping logic"""
         async with LinkedInClient() as client:
-            # Resolve profile ID
+            vanity = client.extract_vanity_name(url)
+            warnings: List[str] = []
+
+            if vanity:
+                try:
+                    dash_data = await client.get_profile_dash(vanity)
+                    elements = (
+                        dash_data.get("data", {}).get("*elements")
+                        or dash_data.get("data", {}).get("elements")
+                        or []
+                    )
+                    profile_id = client._resolver._profile_id_from_urn(
+                        elements[0] if elements else None
+                    ) or await client.resolve_profile_id(url)
+                    return self._parse_dash_response(dash_data, profile_id, url, warnings)
+                except LinkedInError as dash_error:
+                    logger.warning(f"Dash scrape failed, falling back: {dash_error}")
+                    warnings.append(f"dash_failed: {dash_error}")
+
             profile_id = await client.resolve_profile_id(url)
-            
-            # Try GraphQL first
+
+            # Try GraphQL
             try:
                 graphql_data = await client.get_profile_graphql(profile_id)
-                return self._parse_graphql_response(graphql_data, profile_id, url)
+                result = self._parse_graphql_response(graphql_data, profile_id, url)
+                result["warnings"] = warnings
+                return result
             except (GraphQLQueryError, LinkedInError) as graphql_error:
                 logger.warning(f"GraphQL failed, falling back to REST: {graphql_error}")
-                
+                warnings.append(f"graphql_failed: {graphql_error}")
+
                 # Fall back to REST
                 try:
                     rest_data = await client.get_profile_rest(profile_id)
-                    return self._parse_rest_response(rest_data, profile_id, url)
+                    result = self._parse_rest_response(rest_data, profile_id, url)
+                    result["warnings"].extend(warnings)
+                    return result
                 except Exception as rest_error:
                     logger.error(f"REST also failed: {rest_error}")
                     raise PartialDataError(
-                        "Both GraphQL and REST failed",
+                        "Dash, GraphQL, and REST failed",
                         {},
-                        [str(graphql_error), str(rest_error)]
+                        warnings + [str(graphql_error), str(rest_error)]
                     )
+
+    def _parse_dash_response(
+        self,
+        data: Dict[str, Any],
+        profile_id: str,
+        url: str,
+        warnings: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Parse dash API response into final format"""
+        result = self.parser.parse_dash_profile_response(data, url, profile_id)
+        result["warnings"] = warnings or []
+        result["scraped_at"] = datetime.now(timezone.utc).isoformat()
+        return {
+            "profile": result["profile"],
+            "experience": result["experience"],
+            "education": result["education"],
+            "skills": result["skills"],
+            "certifications": result["certifications"],
+            "languages": result["languages"],
+            "warnings": result["warnings"],
+            "scraped_at": result["scraped_at"],
+            "source": result["source"],
+        }
     
     def _parse_graphql_response(
         self,

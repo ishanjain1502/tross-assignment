@@ -6,6 +6,7 @@ from app.linkedin.auth import LinkedInAuth
 from app.linkedin.resolver import ProfileResolver
 from app.linkedin.rest_client import LinkedInRESTClient
 from app.linkedin.graphql_client import LinkedInGraphQLClient
+from app.linkedin.dash_client import LinkedInDashClient
 from app.linkedin.exceptions import (
     LinkedInError, GraphQLQueryError, ProfileNotFoundError
 )
@@ -25,6 +26,7 @@ class LinkedInClient:
         self._resolver: Optional[ProfileResolver] = None
         self._rest_client: Optional[LinkedInRESTClient] = None
         self._graphql_client: Optional[LinkedInGraphQLClient] = None
+        self._dash_client: Optional[LinkedInDashClient] = None
     
     async def __aenter__(self):
         self._http = LinkedInHttpClient()
@@ -38,6 +40,7 @@ class LinkedInClient:
         self._resolver = ProfileResolver(http_client, auth_headers)
         self._rest_client = LinkedInRESTClient(http_client, auth_headers)
         self._graphql_client = LinkedInGraphQLClient(http_client, auth_headers)
+        self._dash_client = LinkedInDashClient(http_client, auth_headers)
         
         return self
     
@@ -48,6 +51,14 @@ class LinkedInClient:
     async def resolve_profile_id(self, public_url: str) -> str:
         """Convert public URL to internal profile ID"""
         return await self._resolver.resolve_profile_id(public_url)
+
+    def extract_vanity_name(self, public_url: str) -> Optional[str]:
+        """Extract vanity username from a /in/<username> profile URL."""
+        return self._resolver.extract_vanity_name(public_url)
+
+    async def get_profile_dash(self, vanity: str) -> Dict[str, Any]:
+        """Fetch profile via Voyager dash API (primary method)."""
+        return await self._dash_client.get_profile_by_vanity(vanity)
     
     async def get_profile_graphql(self, profile_id: str) -> Dict[str, Any]:
         """Fetch profile via GraphQL (primary method)"""
